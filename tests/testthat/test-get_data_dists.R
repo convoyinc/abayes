@@ -1,0 +1,26 @@
+context('Test ability to generate data distributions')
+
+test_that('get_data_dists can create a list of distributions', {
+    set.seed(123)
+    sampling_distribution <- beta_dist(alpha = 1, beta = 1)
+    distributions <- get_data_dists(sampling_distribution, n = 3, num_variants = 2)
+    set.seed(123)
+    rates <- rbeta(6, 1, 1)
+    expect_equal(distributions[[1]][['b']][['rate']], rates[4])
+    
+    set.seed(123)
+    sampling_distribution <- normal_gamma_dist(mu = 0, lambda = 1, alpha = 1, beta = 1)
+    distributions <- get_data_dists(sampling_distribution, n = 3, num_variants = 2)
+    set.seed(123)
+    tau <- rgamma(6, 1, 1)
+    mu <- rnorm(6, 0, sqrt(1 / tau))
+    expect_equal(distributions[[2]][['a']][['mu']], mu[2])
+    expect_equal(distributions[[3]][['b']][['sigma']], 1 / sqrt(tau[6]))
+    
+    set.seed(123)
+    sampling_distribution <- gamma_dist(alpha = 1, beta = 1)
+    distributions <- get_data_dists(sampling_distribution, n = 3, num_variants = 2)
+    set.seed(123)
+    rates <- rgamma(6, 1, 1)
+    expect_equal(distributions[[1]][['b']][['rate']], rates[4])
+})

@@ -1,0 +1,27 @@
+Package: abayes
+Type: Package
+Title: Bayesian A/B Testing
+Version: 0.0.1
+Authors@R: c(
+    person("Michael", "Frasco", email = "mfrasco@convoy.com", role = c("aut", "cre")),
+    person("Convoy Inc.", role = c("cph")))
+Maintainer: Michael Frasco <mfrasco@convoy.com>
+Description:
+    Simulate Bayesian A/B testing algorithms and evaluate the results of A/B
+    tests with a shiny app.
+Depends:
+    R (>= 3.3.0)
+Imports:
+    data.table,
+    ggplot2,
+    gridExtra,
+    parallel,
+    purrr,
+    stats
+Suggests:
+    knitr,
+    testthat,
+    rmarkdown
+License: Apache License 2.0 | file LICENSE
+LazyData: TRUE
+RoxygenNote: 6.0.1

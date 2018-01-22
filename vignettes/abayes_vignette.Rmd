@@ -1,0 +1,308 @@
+---
+title: "abayes Vignette"
+author: "Michael Frasco"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+
+## What is this package?
+
+For background information, please read the README.md at the root of the git repository. The rest of this document assumes that you have read that README.
+
+## Scope
+
+This document supports [this blog post](convoy.com).
+
+```{r, message=FALSE}
+library(ggplot2)
+library(data.table)
+library(parallel)
+library(purrr)
+library(abayes)
+```
+
+## Loss Function
+
+The loss function that we are using in these simulations is shown below as a function of the difference between $\theta_b$ and $\theta_a$. We lose nothing if $\theta_a$ is larger than $\theta_b$, else we lose the difference. There are many variants that we could apply to this function. We'll stick with this function because it is the simplest.
+
+```{r, fig.height=4, fig.width=6.67}
+dt <- data.table(theta_diff = seq(-3, 3, length.out = 100))
+dt[, loss_fun := pmax(theta_diff, 0)]
+
+loss_plot <- ggplot(dt, aes(x = theta_diff, y = loss_fun)) +
+    geom_line(colour = '#f65335', size = 1.5) +
+    labs(title = 'Loss Function when Choosing Variant A', aes(colour = '#f65335')) +
+    xlab(expression(beta*' - '*alpha)) +
+    ylab('Loss Function') +
+    theme(plot.title = element_text(hjust = 0.5, size = 22)
+          , axis.title = element_text(size = 18)
+          , axis.text = element_text(size = 14))
+loss_plot
+```
+
+## Simulations
+
+I want to demonstrate how we can control our average loss over a sequence of experiments by ending the experiment once the expected loss for either variant drops below $\epsilon$. This is the guarantee about reliability that Bayesian methods provide.
+
+I use 20 different values of $\epsilon$ for each setup. In practice, the choice of $\epsilon$ is very context dependent. In a bernoulli experiment with a small expected rate, $\epsilon$ is going to be very small. In a normal experiment with a large variance, $\epsilon$ is going to be much larger. You can also use a loss function that takes the percent difference between $\theta_a$ and $\theta_b$ in order to eliminate some of this variability from experiment to experiment.
+
+The last lever that controls the settings of the experiment is how frequently we evaluate the stopping condition. We could check the results after every single observation. However, for the sake of experimentation speed, I try to setup the simulations so that we evaluate the stopping condition on average 25 times over the entire experiment. In my head, this corresponding to checking the results once a day for a month. Of course, evaluating the stopping condition fewer times will lead to fewer mistakes. Therefore, one might consider a stopping rule that makes sure that the expected loss has been below $\epsilon$ for a consecutive period of time.
+
+### Choosing a Prior
+
+The prior distribution that I am going to use for this experiment is shown below.
+
+```{r, fig.height=4, fig.width=6.67}
+prior <- beta_dist(alpha = 70, beta = 7000)
+sampling_plot <- plot_beta(betas = list('a' = prior), title = 'Prior Distribution', xlab = 'Rate that Events Occur')
+sampling_plot
+```
+
+This distribution was chosen because it is centered around $0.01$ and has a reasonable range of values from $0.007$ to $0.013$. We are going to use these values as our prior for both variants and as our sampling distribution for the data generating distribution in each simulation.
+
+### Running the Simulation
+
+```{r, eval=FALSE}
+num_cores <- detectCores() - 1
+
+num_thresholds <- 20
+num_sims <- 250 # doing more simulations would lead to more accurate results
+max_rounds <- 10000
+
+numeric_seed <- as.numeric(paste(charToRaw('ab'), collapse = '')) # 6162
+set.seed(numeric_seed)
+
+priors <- list('a' = prior, 'b' = prior)
+thresholds <- 10 ^ seq(-5.5, -3, length.out = num_thresholds)
+obs_to_see <- seq(3000, 50, length.out = num_thresholds)
+obs_to_see <- ceiling(obs_to_see) - ceiling(obs_to_see) %% 2
+results <- vector('list', num_thresholds)
+
+for (i in 1:num_thresholds) {
+    print(paste('performing simulation', i))
+    results[[i]] <- investigate_simulations(num_sims = num_sims
+                                            , priors = priors
+                                            , loss_threshold = thresholds[i]
+                                            , sampling_distribution = prior
+                                            , obs_per_round = obs_to_see[i]
+                                            , max_rounds = max_rounds
+                                            , num_cores = num_cores)
+}
+```
+
+```{r, eval=FALSE}
+avg_losses <- purrr::map_dbl(results, function(x) mean(x[['sim_dt']][['loss']], na.rm = TRUE))
+dt <- data.table(log_thresh = thresholds, avg_loss = avg_losses, expected = thresholds)
+sim_plot <- ggplot(dt, aes(log_thresh)) +
+    geom_line(aes(y = avg_loss, colour = 'observed average loss'), size = 1.25) +
+    geom_line(aes(y = expected, colour = 'expected loss'), size = 1.5) +
+    labs(title = expression('Observed Loss is Controlled by '*epsilon), aes(colour = '#f65335')) +
+    xlab(expression(epsilon*': Threshold Used in Simulations')) +
+    ylab('Simulated Average Loss') +
+    scale_colour_manual(values=c('black', '#f65335')) +
+    scale_x_log10() + 
+    scale_y_log10() + 
+    theme(plot.title = element_text(size = 16, hjust = 0.5)
+          , plot.subtitle = element_text(size = 14, hjust = 0.5)
+          , axis.text = element_text(size = 12)
+          , axis.title = element_text(size = 14)
+          , legend.title = element_blank()
+          , legend.position = 'bottom'
+          , legend.text = element_text(size = 12))
+sim_plot
+```
+
+
+## Derivations for Bayesian A/B Testing
+
+### Calculating Metrics Between Two Variants
+
+The following derivations were taken from [Evan Miller's website](https://www.evanmiller.org/bayesian-ab-testing.html) and [Chris Stucchio's website](https://www.chrisstucchio.com/blog/2014/bayesian_ab_decision_rule.html). I am re-creating their derivations for my own sake.
+
+#### Beta Distribution
+
+##### Probability Variant B Greater than Variant A
+
+We aim to provide an analytic solution for calculating $P(p_b > p_a)$ where
+
+$$
+\begin{eqnarray}
+p_a & \sim & Beta(\alpha_a, \beta_a) \\
+p_b & \sim & Beta(\alpha_b, \beta_b)
+\end{eqnarray}
+$$
+
+Here $Beta(., .)$ represents the [Beta distribution](https://en.wikipedia.org/wiki/Beta_distribution).
+
+###### Background Information Needed For the Derivation
+
+Before, we begin the actual derivation, we are going to provide some established facts about the Beta distribution and the [Beta function](https://en.wikipedia.org/wiki/Beta_function).
+
+First, for any random variable $X$, if $X \sim B(\alpha, \beta)$, then the probability density function (i.e. the probability that $X$ takes on some value $x$) can be written as follows.
+
+$$
+\begin{eqnarray}
+f(x) = P(X = x) & = & \frac{x^{\alpha - 1} (1 - x)^{\beta - 1}}{B(\alpha, \beta)}
+\end{eqnarray}
+$$
+Where $B(., .)$ represents the Beta function.
+
+Next, the cumulative density function of $X$ (i.e. the probability that $X$ takes on some value less than $x$) is known as the regularized incomplete beta function.
+
+$$
+\begin{eqnarray}
+    P(X < x) = I_x(\alpha, \beta) & = & \frac{B(x; \alpha, \beta)}{B(\alpha, \beta)}
+\end{eqnarray}
+$$
+
+Where $B(x; \alpha, \beta)$ is the incomplete beta function and can be expressed as
+
+$$
+\begin{eqnarray}
+B(x; \alpha, \beta) = \int_0^x t^{\alpha - 1} (1 - t)^{\beta - 1} dt
+\end{eqnarray}
+$$
+
+Lastly, we have the [following equalities](https://en.wikipedia.org/wiki/Beta_function#Properties_2)
+
+$$
+\begin{eqnarray}
+I_x(1, \beta) & = & 1 - (1 - x)^{\beta} \\
+I_x(\alpha, \beta) & = & I_x(\alpha - 1, \beta) - \frac{x^{\alpha - 1} (1 - x)^\beta}{(\alpha - 1) B(\alpha - 1, \beta)}
+\end{eqnarray}
+$$
+
+If we apply that second equation recursively and use the first equation as the base case, we obtain the following equation.
+
+$$
+\begin{eqnarray}
+I_x(\alpha, \beta) & = & 1 - (1 - x)^b - \sum_{j=1}^{\alpha - 1} \frac{x^{\alpha - j} (1 - x)^b}{(\alpha - j) B(\alpha - j, \beta)}
+\end{eqnarray}
+$$
+Now, if change the iterating variable so that $i = \alpha - j$ and let $(1 - x)^b$ represent the case where $i = 0$, then we have the following identities
+
+$$
+\begin{eqnarray}
+x^{\alpha - j} & = & x^i \\
+(\alpha - j) * B(\alpha - 1, \beta) & = & (\beta + i) * B(1 + i, \beta)
+\end{eqnarray}
+$$
+And this allows us to write
+
+$$
+\begin{eqnarray}
+I_x(\alpha, \beta) = 1 - \sum_{i=0}^{\alpha - 1} \frac{x^i (1 - x)^\beta}{(\beta + i) B(1 + i, \beta)}
+\end{eqnarray}
+$$
+
+###### The actual derivation
+
+Given all of the information above, we can write
+
+$$
+\begin{eqnarray}
+P(p_b > p_a) & = & \int_0^1 \int_0^1 1_{p_b > p_a} f(p_a) f(p_b) dp_b dp_a \\
+& = & \int_0^1 \int_{p_a}^1 f(p_a) f(p_b) dp_b dp_a \\
+& = & \int_0^1 f(p_a) \Big[ \int_{p_a}^1 f(p_b) dp_b \Big] dp_a \\
+& = & \int_0^1 f(p_a) \Big[ 1 - I_{p_a}(\alpha_b, \beta_b) \Big] dp_a \\
+& = & \int_0^1 f(p_a) dp_a - \int_0^1 f(p_a) I_{p_a}(\alpha_b, \beta_b) dp_a \\
+& = & 1 - \int_0^1 f(p_a) \Big[ 1 - \sum_{i=0}^{\alpha_b - 1} \frac{p_a^i (1 - p_a)^{\beta_b}}{(\beta_b + i) B(1 + i, \beta_b)} \Big] dp_a \\
+& = & 1 - 1 + \int_0^1 f(p_a) \Big[ \sum_{i=0}^{\alpha_b - 1} \frac{p_a^i (1 - p_a)^{\beta_b}}{(\beta_b + i) B(1 + i, \beta_b)} \Big] dp_a \\
+& = & \sum_{i=0}^{\alpha_b - 1} \int_0^1 f(p_a) \Big[  \frac{p_a^i (1 - p_a)^{\beta_b}}{(\beta_b + i) B(1 + i, \beta_b)} \Big] dp_a \\
+& = & \sum_{i=0}^{\alpha_b - 1} \int_0^1  \frac{p_a^{\alpha_a + i - 1} (1 - p_a)^{\beta_a + \beta_b - 1}}{(\beta_b + i) B(\alpha_a, \beta_a) B(1 + i, \beta_b)} dp_a \\
+\end{eqnarray}
+$$
+
+Lastly, if we multiple the numerator and denominator by $B(\alpha_a + i, \beta_a + \beta_b)$ and bring all of the terms that do not depend on $p_a$ out of the integral, we get
+
+$$
+\begin{eqnarray}
+P(p_b > p_a) & = & \sum_{i=0}^{\alpha_b - 1} \frac{B(\alpha_a + i, \beta_a + \beta_b)}{(\beta_b + i)B(\alpha_a, \alpha_b)B(1 + i, \beta_b)} \int_0^1 \frac{p_a^{\alpha_a + i - 1}(1 - p_a)^{\beta_a + \beta_b - 1}}{B(\alpha_a + i, \beta_a + \beta_b)} dp_a \\ 
+& = & \sum_{i=0}^{\alpha_b - 1} \frac{B(\alpha_a + i, \beta_a + \beta_b)}{(\beta_b + i)B(\alpha_a, \alpha_b)B(1 + i, \beta_b)} \equiv h(\alpha_a, \beta_a, \alpha_b, \beta_b)
+\end{eqnarray}
+$$
+
+Thus, we have a closed form expression for the desired probability that only depends on the parameters of the posterior distributions.
+
+##### $E[L](A)$ and $E[L](B)$
+
+Next, we want to derive the formula for the bayesian A/B testing decision rule.
+
+We assume that the loss function for each variant is the absolute loss, which is shown below.
+
+$$
+\begin{eqnarray}
+L(p_a, p_b, A) & = & max(p_b - p_a, 0) \\
+L(p_a, p_b, B) & = & max(p_a - p_b, 0)
+\end{eqnarray}
+$$
+
+This derivation depends on the derivation for $P(p_b > p_a) \equiv h(\alpha_a, \beta_a, \alpha_b, \beta_b)$, which is shown above.
+
+$$
+\begin{eqnarray}
+E[L](B) & = & \int_0^1 \int_0^1 max(p_a - p_b, 0) f(p_a) f(p_b) dp_a dp_b \\
+& = & \int_0^1 \int_{p_b}^1 (p_a - p_b) f(p_a) f(p_b) dp_a dp_b \\
+& = & \int_0^1 \int_{p_b}^1 \frac{p_a^{\alpha_a} (1 - p_a)^{\beta_a - 1}}{B(\alpha_a, \beta_a)} \frac{p_b^{\alpha_b - 1} (1 - p_b)^{\beta_b - 1}}{B(\alpha_b, \beta_b)} dp_a dp_b - \int_0^1 \int_{p_b}^1 \frac{p_a^{\alpha_a - 1} (1 - p_a)^{\beta_a - 1}}{B(\alpha_a, \beta_a)} \frac{p_b^{\alpha_b} (1 - p_b)^{\beta_b - 1}}{B(\alpha_b, \beta_b)} dp_a dp_b \\
+\end{eqnarray}
+$$
+Now, we can multiply the first term by $\frac{B(\alpha_a + 1, \beta_a)}{B(\alpha_a + 1, \beta_a)}$ and the second term by $\frac{B(\alpha_b + 1, \beta_b)}{B(\alpha_b + 1, \beta_b)}$.
+
+$$
+\begin{eqnarray}
+E[L](B) & = & \frac{B(\alpha_a + 1, \beta_a)}{B(\alpha_a + 1, \beta_a)} \int_0^1 \int_{p_b}^1 \frac{p_a^{\alpha_a} (1 - p_a)^{\beta_a - 1}}{B(\alpha_a, \beta_a)} \frac{p_b^{\alpha_b - 1} (1 - p_b)^{\beta_b - 1}}{B(\alpha_b, \beta_b)} dp_a dp_b - \frac{B(\alpha_b + 1, \beta_b)}{B(\alpha_b + 1, \beta_b)} \int_0^1 \int_{p_b}^1 \frac{p_a^{\alpha_a - 1} (1 - p_a)^{\beta_a - 1}}{B(\alpha_a, \beta_a)} \frac{p_b^{\alpha_b} (1 - p_b)^{\beta_b - 1}}{B(\alpha_b, \beta_b)} dp_a dp_b \\
+& = & \frac{B(\alpha_a + 1, \beta_a)}{B(\alpha_a, \beta_a)} \int_0^1 \int_{p_b}^1 \frac{p_a^{\alpha_a} (1 - p_a)^{\beta_a - 1}}{B(\alpha_a + 1, \beta_a)} \frac{p_b^{\alpha_b - 1} (1 - p_b)^{\beta_b - 1}}{B(\alpha_b, \beta_b)} dp_a dp_b - \frac{B(\alpha_b + 1, \beta_b)}{B(\alpha_b, \beta_b)} \int_0^1 \int_{p_b}^1 \frac{p_a^{\alpha_a - 1} (1 - p_a)^{\beta_a - 1}}{B(\alpha_a, \beta_a)} \frac{p_b^{\alpha_b} (1 - p_b)^{\beta_b - 1}}{B(\alpha_b + 1, \beta_b)} dp_a dp_b \\
+& = & \frac{B(\alpha_a + 1, \beta_a)}{B(\alpha_a, \beta_a)} \big(1 - h(\alpha_a + 1, \beta_a, \alpha_b, \beta_b)\big) - \frac{B(\alpha_b + 1, \beta_b)}{B(\alpha_b, \beta_b)} \big(1 - h(\alpha_a, \beta_a, \alpha_b + 1, \beta_b)\big)
+\end{eqnarray}
+$$
+
+Since the loss function is symmetrical, we can solve for $E[L](A)$ by switching the roles of the two variants in the equation above.
+
+
+### Constructing Parameterized Distributions From Desired Properties
+
+#### Beta Distribution
+
+Suppose that $x \sim Beta(\alpha, \beta)$.
+
+We know that $E[x] = \mu = \frac{\alpha}{\alpha + \beta}$ and $Var(x) = \frac{\alpha \beta}{(\alpha + \beta)^2 (\alpha + \beta + 1)}$.
+
+Then, we can write $\alpha + \beta = \frac{\alpha}{\mu}$ and then $\beta = \frac{\alpha}{\mu} - \alpha$. We can use this value to solve for $\alpha$. We have that $\sigma^2 = \frac{\alpha (\frac{\alpha}{\mu} - \alpha)}{(\frac{\alpha}{\mu})^2 (\frac{\alpha}{\mu} + 1)}$.
+
+Simplifying the above, we have
+
+$$
+\begin{eqnarray}
+\sigma^2 & = & \frac{\alpha^2 (1 - \mu) \frac{1}{\mu}}{\alpha^2 (\alpha + \mu) \frac{1}{\mu^3}} \\
+& = & \frac{(1 - \mu)}{(\alpha + \mu) \frac{1}{\mu^2}} \\
+\end{eqnarray}
+$$
+
+This implies that $(1 - \mu) \mu^2 = \sigma^2 \alpha + \sigma^2 \mu$, so that we get $\alpha = \frac{(1 - \mu)\mu^2 - \mu \sigma^2}{\sigma^2}$.
+
+#### Normal Gamma Distribution
+
+Suppose that $\mu \sim N(\mu_0, \frac{1}{\lambda \tau})$ and that $\tau \sim Gamma(\alpha, \beta)$, then we have that $(\mu, \tau) \sim NormalGamma(\mu_0, \lambda, \alpha, \beta)$.
+
+We know that $E[\mu] = \mu_0$, $E[\tau] = \tau_0 = \frac{\alpha}{\beta}$, $Var(\mu) = \sigma^2_{\mu} = \frac{\beta}{\lambda (\alpha - 1)}$, and $Var(\tau) = \sigma^2_{\tau} \frac{\alpha}{\beta^2}$.
+
+Then, we can write $\beta \tau_0 = \alpha$. We can use this to solve for $\beta$. We have that $\sigma^2_{\tau} = \frac{\beta \tau_0}{\beta^2} = \frac{\tau_0}{\beta}$, so that $\beta = \frac{\tau_0}{\sigma^2_{\tau}}$.
+
+Finally, we can use the values for $\alpha$ and $\beta$ to solve for $\lambda$. We have that $\lambda = \frac{\beta}{\sigma^2_{\mu} (\alpha - 1)}$.
+
+#### Gamma Distribution
+
+Suppose that $x \sim Gamma(\alpha, \beta)$.
+
+We know that $E[x] = \mu = \frac{\alpha}{\beta}$ and that $Var(x) = \sigma^2 = \frac{\alpha}{\beta^2}$.
+
+Then, we can write $\beta \mu = \alpha$. We can use this to solve for $\beta$. We have that $\sigma^2 = \frac{\beta \mu}{\beta^2} = \frac{\mu}{\beta}$. This allows us to write $\beta = \frac{\mu}{\sigma ^ 2}$.
+
+Therfore, given $\mu$ and $\sigma$, we can first solve for $\beta$ and then use this to solve for $\alpha$.
+
+
+
