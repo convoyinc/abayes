@@ -2,7 +2,7 @@
 
 ## What is this package?
 
-abayes is an R package that implements Bayesian methods for A/B testing. You can use this package to perform simulations of A/B tests in order to evaluate the Bayesian methods. You can also use this package to evaluate the results of a particular A/B test.
+abayes is an R package that implements Bayesian methods for A/B testing. You can use this package to perform simulations of A/B tests in order to evaluate the Bayesian methods. You can also use the functions in this package to evaluate the results of a particular A/B test or use [this shiny app](https://convoyds.shinyapps.io/abayes/).
 
 ### Other Packages on Bayesian A/B Testing
 
@@ -10,7 +10,7 @@ I wrote most of this code before investigating the existence of open source alte
 
 ## Why did I write this package?
 
-As a data scientist at Convoy, I investigated the performance of Bayesian A/B testing compared to Convoy's existing experimentation framework. After initial simulations showed that the speed and accuracy of Bayesian methods were promising, I wrote more simulation code and expanded the set of functions to support various experimental settings. As Bayesian A/B testing began to be used more and more throughout Convoy, I put all of the functions into a package and built a shiny app on top of that package. This allowed my co-workers to use my functions easily.
+As a data scientist at Convoy, I investigated the performance of Bayesian A/B testing compared to Convoy's existing experimentation framework. After initial simulations showed that the speed and accuracy of Bayesian methods were promising, I wrote more simulation code and expanded the set of functions to support various experimental settings. As Bayesian A/B testing began to be used more and more throughout Convoy, I put all of the functions into a package and built [a shiny app](https://convoyds.shinyapps.io/abayes/) on top of that package. This allowed my co-workers to use my functions easily.
 
 ## Why did I open source this package?
 
@@ -22,7 +22,7 @@ This package is not on CRAN, and there is no plan on submitting it to CRAN. In o
 
 ## What can this package do?
 
-For a detailed demonstration of the simulation capabilities, please see the vignette included in this repo. There, I provide an example of the simulations that demonstrate the guarantees that A/B testing makes.
+For a detailed demonstration of the simulation capabilities, please see [the vignette](https://github.com/convoyinc/abayes/blob/master/vignettes/abayes_vignette.Rmd) included in this repo. There, I provide an example of the simulations that demonstrate the guarantees that A/B testing makes.
 
 However, this package can also be used to evaluate the results of a single A/B test. Below is some code that demonstrates how to use the package for that purpose.
 
