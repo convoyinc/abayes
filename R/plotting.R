@@ -10,7 +10,7 @@
 #' @param xlab The title of the x axis
 #' @param ylab The title of the y axis
 #' @param color The color for the plot
-#' @param level The desired amount of area between the lower and upper bounds. Default is \code{0.99}.
+#' @param support_level The desired amount of area between the lower and upper bounds. Default is \code{0.99}.
 #' 
 #' @return NULL. A plot is generated
 plot_beta <- function(betas
@@ -18,7 +18,7 @@ plot_beta <- function(betas
                       , xlab = 'Rate that the Event Occurs'
                       , ylab = 'Density of that Rate'
                       , color = '#f65335'
-                      , level = 0.99
+                      , support_level = 0.99
 ) {
     
     n_samp <- 1e5
@@ -33,8 +33,8 @@ plot_beta <- function(betas
         
         # remove the lower and upper extremes of the data
         beta_vec <- beta_vec[data.table::between(beta_vec
-                                                 , quantile(beta_vec, 0.005)
-                                                 , quantile(beta_vec, 0.995))]
+                                                 , quantile(beta_vec, (1 - support_level) / 2)
+                                                 , quantile(beta_vec, support_level + (1 - support_level) / 2))]
         
         beta_dt <- data.table::rbindlist(list(beta_dt, data.table::data.table('variant' = rep(var_name, length(beta_vec))
                                                                               , 'betas' = beta_vec)))
@@ -70,7 +70,11 @@ plot_beta <- function(betas
 #' @param normals A list of lists of normal distributions
 #' @inheritParams plot_beta
 #' @return NULL. A plot is generated
-plot_normal <- function(normals) {
+plot_normal <- function(normals
+                        , title = 'Normal Distribution'
+                        , color = '#f65335'
+                        , support_level = 0.99
+) {
     n_samp <- 1e5
     
     sd_dt <- NULL
@@ -91,12 +95,12 @@ plot_normal <- function(normals) {
         
         # remove the lower and upper extremes of the data
         sd_vec <- sd_vec[data.table::between(sd_vec
-                                             , quantile(sd_vec, 0.005)
-                                             , quantile(sd_vec, 0.995))]
+                                             , quantile(sd_vec, (1 - support_level) / 2)
+                                             , quantile(sd_vec, support_level + (1 - support_level) / 2))]
         n_sd <- length(sd_vec)
         mu_vec <- mu_vec[data.table::between(mu_vec
-                                             , quantile(mu_vec, 0.005)
-                                             , quantile(mu_vec, 0.995))]
+                                             , quantile(mu_vec, (1 - support_level) / 2)
+                                             , quantile(mu_vec, support_level + (1 - support_level) / 2))]
         n_mu <- length(mu_vec)
         
         sd_dt <- data.table::rbindlist(list(sd_dt, data.table::data.table('variant' = rep(var_name, n_sd)
@@ -108,7 +112,7 @@ plot_normal <- function(normals) {
     if (length(normals) > 1) {
         col_vals <- c('darkred', 'darkblue')
     } else {
-        col_vals <- 'black'
+        col_vals <- color
     }
     
     mu_plot <- ggplot(mu_dt, aes(x = mus, colour = variant, fill = variant)) + 
@@ -168,7 +172,11 @@ plot_normal <- function(normals) {
 #' @param gammas A list of lists of gamma distributions
 #' @inheritParams plot_beta
 #' @return NULL. A plot is generated
-plot_gamma <- function(gammas, title = 'Density of Gamma Distribution', level = 0.99) {
+plot_gamma <- function(gammas
+                       , title = 'Density of Gamma Distribution'
+                       , color = '#f65335'
+                       , support_level = 0.99
+) {
     
     n_samp <- 1e5
     gamma_dt <- NULL
@@ -182,8 +190,8 @@ plot_gamma <- function(gammas, title = 'Density of Gamma Distribution', level = 
         
         # remove the lower and upper extremes of the data
         gamma_vec <- gamma_vec[data.table::between(gamma_vec
-                                                   , quantile(gamma_vec, 0.005)
-                                                   , quantile(gamma_vec, 0.995))]
+                                                   , quantile(gamma_vec, (1 - support_level) / 2)
+                                                   , quantile(gamma_vec, support_level + (1 - support_level) / 2))]
         
         gamma_dt <- data.table::rbindlist(list(gamma_dt, data.table::data.table('variant' = rep(var_name, length(gamma_vec))
                                                                                 , 'gammas' = gamma_vec)))
@@ -192,10 +200,10 @@ plot_gamma <- function(gammas, title = 'Density of Gamma Distribution', level = 
     if (length(gammas) > 1) {
         col_vals <- c('darkred', 'darkblue')
     } else {
-        col_vals <- 'black'
+        col_vals <- color
     }
     
-    lambda_plot <- ggplot(gamma_dt, aes(x = gammas, colour = variant, fill =variant)) + 
+    lambda_plot <- ggplot(gamma_dt, aes(x = gammas, colour = variant, fill = variant)) + 
         geom_density(size = 1, alpha = 0.1) +
         ggtitle(title) +
         xlab('Expected Amount of Times Event Occurrs') +
@@ -211,3 +219,23 @@ plot_gamma <- function(gammas, title = 'Density of Gamma Distribution', level = 
     return(lambda_plot)
 }
 
+#' @title Plot Relative Gain
+#' @name plot_relative_gain
+#' @description Plot the cumulative density of the ratio of the metric under variant B to the metric under variant A
+#' @importFrom purrr map
+#' @export
+#' @param dists A list of distribution objects, with elements named \code{'a'} and \code{'b'}
+#' @param sim_batch_size The number of objects to simulate
+#' @return A plot
+plot_relative_gain <- function(dists, sim_batch_size = 1e5, title = 'Cumulative Density of B / A') {
+    thetas <- purrr::map(dists, function(dist) simulate_data(dist = dist, n = sim_batch_size))
+    ratios <- thetas[['b']] / thetas[['a']]
+    df <- data.frame(x = ratios)
+    ecdf_plot <- ggplot(df, aes(x, colour = '#f65335')) + stat_ecdf(size = 1.5) +
+        ggtitle(title) + xlab('Relative Gain (B / A)') + ylab('Cumulative Density') +
+        theme(plot.title = element_text(hjust = 0.5, size = 22)
+              , axis.title = element_text(size = 18)
+              , axis.text = element_text(size = 14)
+              , legend.position = 'none')
+    return(ecdf_plot)
+}

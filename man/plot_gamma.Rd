@@ -4,14 +4,17 @@
 \alias{plot_gamma}
 \title{Plot Gamma Distributions}
 \usage{
-plot_gamma(gammas, title = "Density of Gamma Distribution", level = 0.99)
+plot_gamma(gammas, title = "Density of Gamma Distribution",
+  color = "#f65335", support_level = 0.99)
 }
 \arguments{
 \item{gammas}{A list of lists of gamma distributions}
 
 \item{title}{The title of the plot}
 
-\item{level}{The desired amount of area between the lower and upper bounds. Default is \code{0.99}.}
+\item{color}{The color for the plot}
+
+\item{support_level}{The desired amount of area between the lower and upper bounds. Default is \code{0.99}.}
 }
 \value{
 NULL. A plot is generated
