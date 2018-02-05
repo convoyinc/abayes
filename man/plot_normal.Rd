@@ -4,10 +4,17 @@
 \alias{plot_normal}
 \title{Plot Normal Distributions}
 \usage{
-plot_normal(normals)
+plot_normal(normals, title = "Normal Distribution", color = "#f65335",
+  support_level = 0.99)
 }
 \arguments{
 \item{normals}{A list of lists of normal distributions}
+
+\item{title}{The title of the plot}
+
+\item{color}{The color for the plot}
+
+\item{support_level}{The desired amount of area between the lower and upper bounds. Default is \code{0.99}.}
 }
 \value{
 NULL. A plot is generated

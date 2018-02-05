@@ -6,7 +6,7 @@
 \usage{
 plot_beta(betas, title = "Beta Distribution",
   xlab = "Rate that the Event Occurs", ylab = "Density of that Rate",
-  color = "#f65335", level = 0.99)
+  color = "#f65335", support_level = 0.99)
 }
 \arguments{
 \item{betas}{A list of lists of beta distributions}
@@ -19,7 +19,7 @@ plot_beta(betas, title = "Beta Distribution",
 
 \item{color}{The color for the plot}
 
-\item{level}{The desired amount of area between the lower and upper bounds. Default is \code{0.99}.}
+\item{support_level}{The desired amount of area between the lower and upper bounds. Default is \code{0.99}.}
 }
 \value{
 NULL. A plot is generated
